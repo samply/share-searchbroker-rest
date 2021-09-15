@@ -2,13 +2,18 @@ package de.samply.share.broker.utils.db;
 
 import de.samply.share.broker.jdbc.ResourceManager;
 import de.samply.share.broker.model.db.Tables;
+import de.samply.share.broker.model.db.tables.daos.BankDao;
 import de.samply.share.broker.model.db.tables.pojos.Bank;
 import de.samply.share.broker.model.db.tables.pojos.Site;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jooq.Configuration;
 import org.jooq.DSLContext;
+import org.jooq.SQLDialect;
+import org.jooq.impl.DefaultConfiguration;
 
 /**
  * This class provides static methods for CRUD operations for Bank Objects.
@@ -84,6 +89,25 @@ public final class BankUtil {
     } else {
       return site.getId();
     }
+  }
+
+  /**
+   * Get all banks.
+   *
+   * @return a list with all banks
+   */
+  public static List<Bank> fetchSites() {
+    List<Bank> banks = null;
+    BankDao bankDao;
+
+    try (Connection conn = ResourceManager.getConnection()) {
+      Configuration configuration = new DefaultConfiguration().set(conn).set(SQLDialect.POSTGRES);
+      bankDao = new BankDao(configuration);
+      banks = bankDao.findAll();
+    } catch (SQLException e) {
+      e.printStackTrace();
+    }
+    return banks;
   }
 
 }

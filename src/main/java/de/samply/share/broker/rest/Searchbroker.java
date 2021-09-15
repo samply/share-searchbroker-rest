@@ -29,7 +29,7 @@ import de.samply.share.common.utils.Constants;
 import de.samply.share.common.utils.ProjectInfo;
 import de.samply.share.common.utils.SamplyShareUtils;
 import de.samply.share.essentialquery.EssentialSimpleQueryDto;
-import java.sql.SQLException;
+import java.sql.Timestamp;
 import java.util.List;
 import javax.inject.Inject;
 import javax.servlet.http.HttpServletRequest;
@@ -40,7 +40,6 @@ import javax.ws.rs.GET;
 import javax.ws.rs.HeaderParam;
 import javax.ws.rs.HttpMethod;
 import javax.ws.rs.NotAllowedException;
-import javax.ws.rs.NotFoundException;
 import javax.ws.rs.OPTIONS;
 import javax.ws.rs.POST;
 import javax.ws.rs.PUT;
@@ -1060,7 +1059,7 @@ public class Searchbroker {
       @PathParam("inquiryid") int inquiryId,
       @PathParam("bankemail") String bankEmail,
       String reply) {
-
+    Timestamp timestamp = SamplyShareUtils.getCurrentSqlTimestamp();
     int bankId = Utils.getBankId(authorizationHeader, bankEmail);
 
     if (bankId < 0) {
@@ -1073,7 +1072,7 @@ public class Searchbroker {
       return Response.status(Response.Status.BAD_REQUEST).build();
     }
 
-    if (!inquiryHandler.saveReply(inquiryId, bankId, reply)) {
+    if (!inquiryHandler.saveReply(inquiryId, bankId, reply, timestamp)) {
       LOGGER.warn("An error occurred while trying to store a reply to inquiry " + inquiryId + " by "
           + bankEmail);
       return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();

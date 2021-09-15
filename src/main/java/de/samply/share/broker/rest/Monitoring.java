@@ -5,7 +5,9 @@ import static de.samply.share.broker.rest.InquiryHandler.isQueryLanguageViewQuer
 
 import com.google.gson.Gson;
 import de.samply.common.mdrclient.MdrClient;
+import de.samply.share.broker.control.SearchController;
 import de.samply.share.broker.model.db.tables.pojos.Site;
+import de.samply.share.broker.monitoring.QueryObject;
 import de.samply.share.broker.utils.Utils;
 import de.samply.share.broker.utils.connector.IcingaConnector;
 import de.samply.share.broker.utils.connector.IcingaConnectorException;
@@ -24,14 +26,18 @@ import de.samply.share.model.common.Query;
 import de.samply.share.model.common.Where;
 import de.samply.share.utils.QueryConverter;
 import de.samply.web.mdrfaces.MdrContext;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import javax.ws.rs.Consumes;
 import javax.ws.rs.DefaultValue;
 import javax.ws.rs.GET;
 import javax.ws.rs.HeaderParam;
+import javax.ws.rs.POST;
 import javax.ws.rs.PUT;
 import javax.ws.rs.Path;
+import javax.ws.rs.PathParam;
 import javax.ws.rs.Produces;
 import javax.ws.rs.core.HttpHeaders;
 import javax.ws.rs.core.MediaType;
@@ -39,6 +45,12 @@ import javax.ws.rs.core.Response;
 import javax.xml.bind.JAXBException;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
 
 
 /**
@@ -186,6 +198,64 @@ public class Monitoring {
 
   }
 
+  /**
+   * Create a new monitoring query.
+   * @param queryObject the query as cql string and the target sites as list
+   * @return response if the query has been created
+   */
+  @Path("queries")
+  @POST
+  @Produces(MediaType.TEXT_PLAIN)
+  @Consumes({MediaType.APPLICATION_JSON, MediaType.TEXT_PLAIN})
+  @APIResponses({
+      @APIResponse(
+          responseCode = "200",
+          description = "ok",
+          content = @Content(
+              mediaType = MediaType.APPLICATION_JSON,
+              schema = @Schema(implementation = String.class))),
+      @APIResponse(responseCode = "500", description = "Internal Server Error")
+  })
+  @Operation(summary = "Save query in searchbroker database for monitoring")
+  public Response createQuery(@HeaderParam(HttpHeaders.AUTHORIZATION) String auth,
+      @Parameter(
+          name = "query",
+          description = "Query as a JSON object",
+          schema = @Schema(implementation = QueryObject.class))
+          QueryObject queryObject) {
+    try {
+      if (auth == null || !checkBasicAuth(auth)) {
+        return Response.status(Response.Status.UNAUTHORIZED).build();
+      }
+      return Response.ok(
+          SearchController.releaseQuery(new Gson().toJson(queryObject.getCqlQueryList()),
+              queryObject.getTarget())).build();
+    } catch (Exception e) {
+      return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+    }
+  }
+
+  /**
+   * Get the results for a monitoring query.
+   * @param auth basic auth
+   * @param queryId the query id
+   * @return the results of the sites
+   */
+  @Path("queries/{id}")
+  @GET
+  @Produces(MediaType.APPLICATION_JSON)
+  public Response getResult(@HeaderParam(HttpHeaders.AUTHORIZATION) String auth,
+      @PathParam("id") int queryId) {
+    try {
+      if (auth == null || !checkBasicAuth(auth)) {
+        return Response.status(Response.Status.UNAUTHORIZED).build();
+      }
+      return Response.ok(SearchController.getResultFromQuery(queryId)).build();
+    } catch (Exception e) {
+      return Response.status(Response.Status.INTERNAL_SERVER_ERROR).build();
+    }
+  }
+
   private String createReferenceQueryCql() {
     return "library Retrieve\n"
         + "using FHIR version '4.0.0'\n"
@@ -206,6 +276,16 @@ public class Monitoring {
     public void setStatus(String status) {
       this.status = status;
     }
+  }
+
+  private boolean checkBasicAuth(String basicAuth) {
+    String username = ProjectInfo.INSTANCE.getConfig().getProperty("icinga.username");
+    String password = ProjectInfo.INSTANCE.getConfig().getProperty("icinga.password");
+    String base64Credentials = basicAuth.substring("Basic".length()).trim();
+    byte[] credDecoded = Base64.getDecoder().decode(base64Credentials);
+    String credentials = new String(credDecoded, StandardCharsets.UTF_8);
+    final String[] values = credentials.split(":", 2);
+    return values[0].equals(username) && values[1].equals(password);
   }
 
 }

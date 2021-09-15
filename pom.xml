@@ -60,7 +60,7 @@
         <common-http.version>7.1.0</common-http.version>
         <jsf-renderer.version>2.0.0</jsf-renderer.version>
         <share-common.version>4.3.0</share-common.version>
-        <share-dto.version>5.0.0</share-dto.version>
+        <share-dto.version>5.1.0</share-dto.version>
         <bbmri-auth-dto.version>2.0.0</bbmri-auth-dto.version>
         <!-- general dependencies -->
         <!-- We must keep the older mojarra version as the opening of elements

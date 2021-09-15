@@ -54,6 +54,6 @@ class ReplyUtilTest {
 
   @NotNull
   private Reply reply(int i) {
-    return new Reply(i, null, null, null);
+    return new Reply(i, null, null, null, null);
   }
 }

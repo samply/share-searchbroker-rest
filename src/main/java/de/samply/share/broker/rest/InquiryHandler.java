@@ -3,6 +3,7 @@ package de.samply.share.broker.rest;
 import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
 import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import de.samply.share.broker.jdbc.ResourceManager;
 import de.samply.share.broker.model.db.Tables;
 import de.samply.share.broker.model.db.enums.ActionType;
@@ -59,6 +60,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.Time;
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -94,6 +97,7 @@ public class InquiryHandler {
 
   private static final String QUERYLANGUAGE_QUERY = "QUERY";
   private static final String QUERYLANGUAGE_CQL = "CQL";
+  private static final Gson gson = new Gson();
 
   public InquiryHandler() {
   }
@@ -118,15 +122,14 @@ public class InquiryHandler {
    * @param voteId             the id of the vote linked with this inquiry
    * @param resultTypes        list of the entities that are searched for
    * @param bypassExamination  if true, no check by the ccp office is required
+   * @param isMonitoring  if true, no creation of cql query
    * @return the id of the inquiry
    */
   public int storeAndRelease(String simpleQueryDtoJson, int userid, String inquiryName,
       String inquiryDescription, int exposeId, int voteId, List<String> resultTypes,
-      boolean bypassExamination) {
-    EssentialSimpleQueryDto essentialSimpleQueryDto = jsonString2EssentialDto(simpleQueryDtoJson);
-
-    int inquiryId = store(essentialSimpleQueryDto, userid, inquiryName, inquiryDescription,
-        exposeId, voteId, resultTypes);
+      boolean bypassExamination, boolean isMonitoring) {
+    int inquiryId = store(simpleQueryDtoJson, userid, inquiryName, inquiryDescription,
+        exposeId, voteId, resultTypes, isMonitoring);
     Inquiry inquiry = InquiryUtil.fetchInquiryById(inquiryId);
     release(inquiry, bypassExamination);
     return inquiryId;
@@ -159,23 +162,23 @@ public class InquiryHandler {
   /**
    * Store a new inquiry draft.
    *
-   * @param essentialSimpleQueryDto the query criteria of the inquiry as EssentialSimpleQueryDto
-   *                                represented as XML
+   * @param query      the query criteria of the inquiry
    * @param userid                  the id of the user that releases the inquiry
    * @param inquiryName             the label of the inquiry
    * @param inquiryDescription      the description of the inquiry
    * @param exposeId                the id of the expose linked with this inquiry
    * @param voteId                  the id of the vote linked with this inquiry
    * @param resultTypes             list of the entities that are searched for
+   * @param isMonitoring  if true, no creation of cql query
    * @return the id of the inquiry draft
    */
-  private int store(EssentialSimpleQueryDto essentialSimpleQueryDto, int userid, String inquiryName,
-      String inquiryDescription, int exposeId, int voteId, List<String> resultTypes) {
+  private int store(String query, int userid, String inquiryName,
+      String inquiryDescription, int exposeId, int voteId, List<String> resultTypes,
+      boolean isMonitoring) {
     int returnValue = 0;
     UserDao userDao;
     User user;
     Inquiry inquiry;
-
     String projectName = ProjectInfo.INSTANCE.getProjectName();
     boolean isDktk = projectName.equalsIgnoreCase("dktk");
 
@@ -209,10 +212,21 @@ public class InquiryHandler {
       inquiry.setCreated(inquiryRecord.getValue(Tables.INQUIRY.CREATED));
       inquiry.setId(inquiryRecord.getValue(Tables.INQUIRY.ID));
 
-      createAndSaveInquiryCriteria(essentialSimpleQueryDto, inquiry, connection);
-
-      createAndSaveStatistics(essentialSimpleQueryDto, inquiry.getId());
-
+      if (!isMonitoring) {
+        EssentialSimpleQueryDto essentialSimpleQueryDto = jsonString2EssentialDto(query);
+        createAndSaveInquiryCriteria(essentialSimpleQueryDto, inquiry, connection);
+        createAndSaveStatistics(essentialSimpleQueryDto, inquiry.getId());
+      } else {
+        CqlQueryList cqlQueryList = gson.fromJson(query, CqlQueryList.class);
+        for (CqlQuery cqlQuery : cqlQueryList.getQueries()) {
+          InquiryCriteria inquiryCriteria = new InquiryCriteria();
+          inquiryCriteria.setCriteria(cqlQuery.getCql());
+          inquiryCriteria.setInquiryId(inquiry.getId());
+          inquiryCriteria.setType(InquiryCriteriaType.IC_CQL);
+          inquiryCriteria.setEntityType(cqlQuery.getEntityType());
+          saveInquiryCriteria(inquiryCriteria, connection);
+        }
+      }
       if (exposeId > 0) {
         Document expose = DocumentUtil.getDocumentById(exposeId);
         // TODO: this threw an NPE
@@ -1047,22 +1061,19 @@ public class InquiryHandler {
    * @param inquiryId the id of the inquiry the reply is sent to
    * @param bankId    the id of the bank that sent the reply
    * @param content   the content of the reply
+   * @param timestamp the timestamp of the result
    * @return true, if successful
    */
-  boolean saveReply(int inquiryId, int bankId, String content) {
+  boolean saveReply(int inquiryId, int bankId, String content, Timestamp timestamp) {
     boolean returnValue = true;
     Reply reply;
     ReplyDao replyDao;
-    JSONParser parser = new JSONParser();
-    JSONObject json = new JSONObject();
-    try {
-      json = (JSONObject) parser.parse(content);
-      json.put("site",
-          SiteUtil.fetchSiteById(BankSiteUtil.fetchBankSiteByBankId(bankId).getSiteId()).getName());
-    } catch (ParseException e) {
-      e.printStackTrace();
-    }
-    content = json.toString();
+    Gson gson = new GsonBuilder().disableHtmlEscaping().create();
+    de.samply.share.model.common.result.Reply replyJson = gson.fromJson(content,
+        de.samply.share.model.common.result.Reply.class);
+    replyJson.setSite(
+        SiteUtil.fetchSiteById(BankSiteUtil.fetchBankSiteByBankId(bankId).getSiteId()).getName());
+    content = gson.toJson(replyJson);
 
     try (Connection connection = ResourceManager.getConnection()) {
       Configuration configuration = new DefaultConfiguration().set(connection)
@@ -1079,10 +1090,12 @@ public class InquiryHandler {
         reply.setBankId(bankId);
         reply.setInquiryId(inquiryId);
         reply.setContent(content);
+        reply.setRetrievedat(timestamp);
         replyDao.insert(reply);
       } else {
         reply = replyDao.findById(record.getValue(Tables.REPLY.ID));
         reply.setContent(content);
+        reply.setRetrievedat(timestamp);
         replyDao.update(reply);
       }
 

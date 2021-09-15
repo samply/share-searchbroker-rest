@@ -9,6 +9,7 @@ import de.samply.share.broker.model.db.tables.pojos.BankSite;
 import de.samply.share.broker.model.db.tables.pojos.Site;
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.util.ArrayList;
 import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -218,6 +219,31 @@ public final class BankSiteUtil {
       // There shall be but one assignment
       if (bankSites != null && bankSites.size() == 1) {
         return bankSites.get(0);
+      }
+    } catch (SQLException e) {
+      e.printStackTrace();
+    }
+    return null;
+  }
+
+  /**
+   * Get a list of bank with the searching sites.
+   *
+   * @param siteIdList the site ids
+   * @return the bank sites of the matching site ids
+   */
+  public static List<BankSite> fetchBankSiteBySiteIdList(List<Integer> siteIdList) {
+    BankSiteDao bankSiteDao;
+    List<BankSite> bankSiteList = new ArrayList<>();
+
+    try (Connection conn = ResourceManager.getConnection()) {
+      Configuration configuration = new DefaultConfiguration().set(conn).set(SQLDialect.POSTGRES);
+      bankSiteDao = new BankSiteDao(configuration);
+      for (int siteId : siteIdList) {
+        List<BankSite> bankSite = bankSiteDao.fetchBySiteId(siteId);
+        if (bankSite != null && bankSite.size() == 1) {
+          bankSiteList.add(bankSite.get(0));
+        }
       }
     } catch (SQLException e) {
       e.printStackTrace();

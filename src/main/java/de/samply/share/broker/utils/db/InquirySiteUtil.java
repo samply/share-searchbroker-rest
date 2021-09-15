@@ -1,6 +1,7 @@
 package de.samply.share.broker.utils.db;
 
 import de.samply.share.broker.jdbc.ResourceManager;
+import de.samply.share.broker.model.db.Tables;
 import de.samply.share.broker.model.db.tables.daos.InquirySiteDao;
 import de.samply.share.broker.model.db.tables.pojos.InquirySite;
 import java.sql.Connection;
@@ -10,6 +11,8 @@ import java.util.List;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jooq.Configuration;
+import org.jooq.DSLContext;
+import org.jooq.Record;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DefaultConfiguration;
 
@@ -64,6 +67,30 @@ public class InquirySiteUtil {
       e.printStackTrace();
     }
     return new ArrayList<>();
+  }
+
+
+  /**
+   * Get the inquiry site by site id and inquiry id.
+   * @param siteId the site id
+   * @param inquiryId tht inquiry id
+   * @return inquiry site
+   */
+  public static InquirySite fetchInquirySiteForSiteIdAndInquiryId(int siteId, int inquiryId) {
+    InquirySite inquirySite = null;
+    Record record;
+    try (Connection conn = ResourceManager.getConnection()) {
+      DSLContext create = ResourceManager.getDslContext(conn);
+      record = create.select().from(Tables.INQUIRY_SITE).where(Tables.INQUIRY_SITE.SITE_ID
+          .equal(siteId)).and(Tables.INQUIRY_SITE.INQUIRY_ID.equal(inquiryId))
+          .fetchOne();
+      if (record != null) {
+        inquirySite = record.into(InquirySite.class);
+      }
+    } catch (SQLException e) {
+      e.printStackTrace();
+    }
+    return inquirySite;
   }
 
 }
